@@ -1,0 +1,23 @@
+.DS_Store
+*.user
+
+# Local/editor state
+.claude/
+.codex/
+.agents/
+
+# Python local artifacts
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# CMake/Qt build outputs
+build/
+cmake-build-*/
+prog/build/
+prog/build-*/
+
+# Upstream ElaWidgetTools checkout kept beside the app.
+# The app links against prog/third_party/ElaWidgetTools instead.
+/ElaWidgetTools/
