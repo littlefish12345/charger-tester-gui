@@ -64,8 +64,9 @@ void MainWindow::setupStatusBar()
     m_statusBar->setSizeGripEnabled(false);
     m_statusText = new ElaText(QStringLiteral("已断开"), this);
     m_statusText->setTextPixelSize(12);
-    m_statusText->setMinimumWidth(200);
-    m_statusBar->addWidget(m_statusText);
+    m_statusText->setMinimumWidth(0);
+    m_statusText->setWordWrap(false);
+    m_statusBar->addWidget(m_statusText, 1);
     setStatusBar(m_statusBar);
 }
 
@@ -130,6 +131,9 @@ void MainWindow::setupAutoConnect()
 
 bool MainWindow::tryAutoConnect()
 {
+    if (m_settingsPage)
+        m_settingsPage->refreshPortList();
+
     if (!m_autoConnectEnabled || m_connected || m_connecting)
         return false;
 
@@ -145,6 +149,8 @@ bool MainWindow::tryAutoConnect()
         m_portName = config.portName;
         m_baudRate = config.baudRate;
         m_connecting = true;
+        m_autoConnected = true;
+        m_settingsPage->selectPort(m_portName);
         m_statusText->setText(QStringLiteral("自动连接中... %1").arg(m_portName));
         m_portManager->connectToPort(config);
         return true;
@@ -160,6 +166,7 @@ void MainWindow::onSettingsConnect(const SerialPortConfig &config)
     m_portName = config.portName;
     m_baudRate = config.baudRate;
     m_connecting = true;
+    m_autoConnected = false;
     m_statusText->setText(QStringLiteral("连接中... %1").arg(m_portName));
     m_portManager->connectToPort(config);
 }
@@ -174,7 +181,7 @@ void MainWindow::onConnected()
 {
     m_connected = true;
     m_connecting = false;
-    m_statusText->setText(QStringLiteral("已连接 — %1").arg(m_portName));
+    m_statusText->setText(QStringLiteral("已连接 %1").arg(m_portName));
     m_settingsPage->setConnectionState(true);
     m_monitoringPage->onConnectionChanged(true);
 }
@@ -183,6 +190,7 @@ void MainWindow::onDisconnected()
 {
     m_connected = false;
     m_connecting = false;
+    m_autoConnected = false;
     m_statusText->setText(QStringLiteral("已断开"));
 
     m_settingsPage->setConnectionState(false);
@@ -250,6 +258,11 @@ void MainWindow::onAutoConnectScan()
 void MainWindow::onAutoConnectEnabledChanged(bool enabled)
 {
     m_autoConnectEnabled = enabled;
+    if (!enabled && m_autoConnected && (m_connected || m_connecting)) {
+        m_portManager->disconnectFromPort();
+        return;
+    }
+
     if (enabled)
         tryAutoConnect();
 }

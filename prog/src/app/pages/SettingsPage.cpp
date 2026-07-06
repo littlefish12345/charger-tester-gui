@@ -71,7 +71,7 @@ void SettingsPage::setupUi()
     mainLayout->addStretch();
 
     // Connections
-    connect(m_refreshBtn, &QPushButton::clicked, this, &SettingsPage::refreshPorts);
+    connect(m_refreshBtn, &QPushButton::clicked, this, &SettingsPage::refreshPortList);
     connect(m_connectBtn, &QPushButton::clicked, this, &SettingsPage::onConnectClicked);
     connect(m_refreshSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
         emit refreshIntervalChanged(val);
@@ -83,7 +83,7 @@ void SettingsPage::setupUi()
         updateManualControls();
     });
 
-    refreshPorts();
+    refreshPortList();
 }
 
 void SettingsPage::updateTheme()
@@ -110,8 +110,9 @@ void SettingsPage::updateTheme()
     setConnectionState(m_connected);
 }
 
-void SettingsPage::refreshPorts()
+void SettingsPage::refreshPortList()
 {
+    const QString selectedPort = m_portCombo->currentData().toString();
     m_portCombo->clear();
     const auto ports = QSerialPortInfo::availablePorts();
     QStringList added;
@@ -129,7 +130,21 @@ void SettingsPage::refreshPorts()
     }
     if (added.isEmpty())
         m_portCombo->addItem("(无可用串口)");
+
+    if (!selectedPort.isEmpty())
+        selectPort(selectedPort);
+
     emit portsRefreshed();
+}
+
+void SettingsPage::selectPort(const QString &portName)
+{
+    if (!m_portCombo)
+        return;
+
+    const int index = m_portCombo->findData(portName);
+    if (index >= 0)
+        m_portCombo->setCurrentIndex(index);
 }
 
 void SettingsPage::onConnectClicked()

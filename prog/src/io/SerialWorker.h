@@ -30,11 +30,13 @@ signals:
 
 private slots:
     void onReadyRead();
+    void onSerialError(QSerialPort::SerialPortError error);
 
 private:
     QSerialPort    *m_serial = nullptr;
     ProtocolParser *m_parser = nullptr;
     QByteArray      m_buffer;
+    bool            m_disconnectedEmitted = true;
 };
 
 #endif // SERIAL_WORKER_H

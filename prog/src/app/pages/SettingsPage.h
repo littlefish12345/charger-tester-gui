@@ -19,6 +19,8 @@ public:
 
     int refreshIntervalMs() const;
     bool autoConnectEnabled() const;
+    void refreshPortList();
+    void selectPort(const QString &portName);
 
 signals:
     void refreshIntervalChanged(int ms);
@@ -31,7 +33,6 @@ public slots:
     void setConnectionState(bool connected);
 
 private slots:
-    void refreshPorts();
     void onConnectClicked();
     void saveSettings();
     void loadSettings();

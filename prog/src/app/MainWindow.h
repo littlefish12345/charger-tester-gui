@@ -69,6 +69,7 @@ private:
     bool     m_connected    = false;
     bool     m_connecting   = false;
     bool     m_autoConnectEnabled = true;
+    bool     m_autoConnected = false;
     QString  m_portName;
     int      m_baudRate     = 115200;
     QTimer  *m_autoConnectTimer = nullptr;

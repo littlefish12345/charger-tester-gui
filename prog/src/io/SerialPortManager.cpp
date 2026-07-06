@@ -60,7 +60,11 @@ void SerialPortManager::disconnectFromPort()
     stopReconnectTimer();
 
     if (m_worker) {
-        QMetaObject::invokeMethod(m_worker, "stop", Qt::QueuedConnection);
+        const auto connectionType =
+            (m_thread && m_thread->isRunning() && QThread::currentThread() != m_thread)
+                ? Qt::BlockingQueuedConnection
+                : Qt::DirectConnection;
+        QMetaObject::invokeMethod(m_worker, "stop", connectionType);
     }
     m_worker = nullptr;
 
@@ -184,6 +188,7 @@ void SerialPortManager::onReconnectTimeout()
     if (m_reconnectAttempts >= MAX_RECONNECT) {
         stopReconnectTimer();
         emit errorOccurred(QStringLiteral("Reconnection failed after %1 attempts").arg(MAX_RECONNECT));
+        disconnectFromPort();
         return;
     }
 
@@ -213,6 +218,9 @@ void SerialPortManager::onReconnectTimeout()
         m_reconnectAttempts = 0;
         stopReconnectTimer();
         emit connected();
+    });
+    connect(m_worker, &SerialWorker::disconnected, this, [this]() {
+        emit disconnected();
     });
     connect(m_worker, &SerialWorker::errorOccurred, this, [this](const QString &err) {
         Q_UNUSED(err)
