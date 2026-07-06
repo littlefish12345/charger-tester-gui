@@ -44,6 +44,11 @@ target_link_libraries(ElaWidgetTools INTERFACE Qt6::Widgets)
 
 add_executable(charger_tester ${SOURCES})
 target_include_directories(charger_tester PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(APPLE)
+    target_link_options(charger_tester PRIVATE
+        "-F${CMAKE_SOURCE_DIR}/third_party/stub_frameworks"
+    )
+endif()
 target_link_libraries(charger_tester PRIVATE
     Qt6::Core
     Qt6::Gui
