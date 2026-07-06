@@ -4,6 +4,7 @@
 #include <ElaWindow.h>
 #include <QEvent>
 #include <QPoint>
+#include <QTimer>
 #include "protocol/ChargerTypes.h"
 #include "io/SerialPortConfig.h"
 
@@ -38,11 +39,15 @@ private slots:
     void onLoadControlSendPower(int currentMa, int voltageMv);
     void onLoadControlSendDecoyPdo(int index);
     void onLoadControlSendDecoyPps(int voltageMv);
+    void onAutoConnectScan();
+    void onAutoConnectEnabledChanged(bool enabled);
 
 private:
     void setupPages();
     void setupStatusBar();
     void setupConnections();
+    void setupAutoConnect();
+    bool tryAutoConnect();
 
     // Window drag/resize for frameless window
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -62,8 +67,11 @@ private:
     SettingsPage         *m_settingsPage         = nullptr;
 
     bool     m_connected    = false;
+    bool     m_connecting   = false;
+    bool     m_autoConnectEnabled = true;
     QString  m_portName;
     int      m_baudRate     = 115200;
+    QTimer  *m_autoConnectTimer = nullptr;
 };
 
 #endif // MAIN_WINDOW_H

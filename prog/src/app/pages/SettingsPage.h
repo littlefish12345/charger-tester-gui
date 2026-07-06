@@ -5,6 +5,7 @@
 #include "io/SerialPortConfig.h"
 
 class ElaComboBox;
+class QCheckBox;
 class QGroupBox;
 class QPushButton;
 class QSpinBox;
@@ -17,9 +18,11 @@ public:
     explicit SettingsPage(QWidget *parent = nullptr);
 
     int refreshIntervalMs() const;
+    bool autoConnectEnabled() const;
 
 signals:
     void refreshIntervalChanged(int ms);
+    void autoConnectEnabledChanged(bool enabled);
     void portsRefreshed();
     void connectRequested(const SerialPortConfig &config);
     void disconnectRequested();
@@ -36,9 +39,11 @@ private slots:
 
 private:
     void setupUi();
+    void updateManualControls();
 
     ElaComboBox *m_portCombo    = nullptr;
     ElaComboBox *m_baudCombo    = nullptr;
+    QCheckBox   *m_autoConnectCheck = nullptr;
     QSpinBox    *m_refreshSpin  = nullptr;
     QPushButton *m_refreshBtn = nullptr;
     QPushButton *m_connectBtn   = nullptr;

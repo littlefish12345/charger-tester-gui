@@ -3,6 +3,7 @@
 #include "ElaPushButton.h"
 #include "ElaTheme.h"
 #include "utils/ThemeUtils.h"
+#include <QCheckBox>
 #include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>
@@ -50,6 +51,10 @@ void SettingsPage::setupUi()
     m_connectBtn = new QPushButton(QStringLiteral("连接"), m_serialGroup);
     serialLayout->addRow(QString(), m_connectBtn);
 
+    m_autoConnectCheck = new QCheckBox(QStringLiteral("自动连接"), m_serialGroup);
+    m_autoConnectCheck->setChecked(true);
+    serialLayout->addRow(QString(), m_autoConnectCheck);
+
     // Display group
     m_displayGroup = new QGroupBox(QStringLiteral("显示设置"), this);
     auto *displayLayout = new QFormLayout(m_displayGroup);
@@ -72,6 +77,11 @@ void SettingsPage::setupUi()
         emit refreshIntervalChanged(val);
         saveSettings();
     });
+    connect(m_autoConnectCheck, &QCheckBox::toggled, this, [this](bool enabled) {
+        emit autoConnectEnabledChanged(enabled);
+        saveSettings();
+        updateManualControls();
+    });
 
     refreshPorts();
 }
@@ -90,9 +100,12 @@ void SettingsPage::updateTheme()
     if (m_displayGroup) m_displayGroup->setStyleSheet(groupStyle);
 
     if (m_refreshBtn) m_refreshBtn->setStyleSheet(QStringLiteral(
-        "#refreshBtn { background-color: #1565C0; color: #FFFFFF; border: none; "
+        "#refreshBtn { background-color: %1; color: #FFFFFF; border: none; "
         "border-radius: 4px; padding: 4px 14px; font-weight: bold; }"
-        "#refreshBtn:hover { background-color: #1976D2; }"));
+        "#refreshBtn:hover { background-color: %2; }"
+        "#refreshBtn:disabled { background-color: %3; color: %4; }"
+    ).arg(c.accentBlue.name(), c.accentBlue.lighter(110).name(),
+          c.accentBlue.darker(145).name(), c.btnDefaultText.name()));
 
     setConnectionState(m_connected);
 }
@@ -121,6 +134,9 @@ void SettingsPage::refreshPorts()
 
 void SettingsPage::onConnectClicked()
 {
+    if (autoConnectEnabled())
+        return;
+
     if (!m_connected) {
         QString portName = m_portCombo->currentData().toString();
         if (portName.isEmpty())
@@ -131,8 +147,7 @@ void SettingsPage::onConnectClicked()
         config.baudRate = m_baudCombo->currentText().toInt();
 
         m_connectBtn->setText(QStringLiteral("断开"));
-        m_portCombo->setEnabled(false);
-        m_baudCombo->setEnabled(false);
+        updateManualControls();
 
         emit connectRequested(config);
     } else {
@@ -150,19 +165,22 @@ void SettingsPage::setConnectionState(bool connected)
             "QPushButton { background-color: %1; color: %2; border: none; "
             "border-radius: 4px; padding: 8px 16px; font-weight: bold; }"
             "QPushButton:hover { background-color: %3; }"
+            "QPushButton:disabled { background-color: %4; color: %5; }"
         ).arg(c.btnDisconnectBg.name(), c.btnDisconnectText.name(),
-             c.btnDisconnectBg.lighter(110).name()));
+             c.btnDisconnectBg.lighter(110).name(),
+             c.btnDisconnectBg.darker(145).name(), c.btnDisconnectText.darker(130).name()));
     } else {
         m_connectBtn->setText(QStringLiteral("连接"));
         m_connectBtn->setStyleSheet(QStringLiteral(
             "QPushButton { background-color: %1; color: %2; border: none; "
             "border-radius: 4px; padding: 8px 16px; font-weight: bold; }"
             "QPushButton:hover { background-color: %3; }"
+            "QPushButton:disabled { background-color: %4; color: %5; }"
         ).arg(c.btnConnectBg.name(), c.btnConnectText.name(),
-             c.btnConnectBg.lighter(110).name()));
-        m_portCombo->setEnabled(true);
-        m_baudCombo->setEnabled(true);
+             c.btnConnectBg.lighter(110).name(),
+             c.btnConnectBg.darker(145).name(), c.btnConnectText.darker(130).name()));
     }
+    updateManualControls();
 }
 
 int SettingsPage::refreshIntervalMs() const
@@ -170,10 +188,16 @@ int SettingsPage::refreshIntervalMs() const
     return m_refreshSpin->value();
 }
 
+bool SettingsPage::autoConnectEnabled() const
+{
+    return m_autoConnectCheck && m_autoConnectCheck->isChecked();
+}
+
 void SettingsPage::saveSettings()
 {
     QSettings settings;
     settings.setValue("serial/baudRate", m_baudCombo->currentText().toInt());
+    settings.setValue("serial/autoConnect", autoConnectEnabled());
     settings.setValue("display/refreshMs", m_refreshSpin->value());
 }
 
@@ -185,4 +209,23 @@ void SettingsPage::loadSettings()
 
     int refresh = settings.value("display/refreshMs", 500).toInt();
     m_refreshSpin->setValue(refresh);
+
+    bool autoConnect = settings.value("serial/autoConnect", true).toBool();
+    m_autoConnectCheck->setChecked(autoConnect);
+    updateManualControls();
+}
+
+void SettingsPage::updateManualControls()
+{
+    const bool manualEnabled = !autoConnectEnabled();
+    const bool canEditPort = manualEnabled && !m_connected;
+
+    if (m_portCombo)
+        m_portCombo->setEnabled(canEditPort);
+    if (m_baudCombo)
+        m_baudCombo->setEnabled(canEditPort);
+    if (m_refreshBtn)
+        m_refreshBtn->setEnabled(canEditPort);
+    if (m_connectBtn)
+        m_connectBtn->setEnabled(manualEnabled);
 }

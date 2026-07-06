@@ -9,7 +9,14 @@
 #include <ElaText.h>
 #include <QApplication>
 #include <QMouseEvent>
+#include <QSerialPortInfo>
 #include <QWindow>
+
+namespace {
+constexpr int kAutoConnectIntervalMs = 3000;
+constexpr int kAutoConnectBaudRate = 115200;
+constexpr const char *kAutoConnectSerial = "ElectricLoader";
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : ElaWindow(parent)
@@ -23,6 +30,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupPages();
     setupStatusBar();
     setupConnections();
+    setupAutoConnect();
 
     qApp->installEventFilter(this);
 }
@@ -104,6 +112,45 @@ void MainWindow::setupConnections()
     // Settings page signals
     connect(m_settingsPage, &SettingsPage::refreshIntervalChanged,
             this, &MainWindow::onRefreshIntervalChanged);
+    connect(m_settingsPage, &SettingsPage::autoConnectEnabledChanged,
+            this, &MainWindow::onAutoConnectEnabledChanged);
+}
+
+void MainWindow::setupAutoConnect()
+{
+    m_autoConnectEnabled = m_settingsPage->autoConnectEnabled();
+    m_autoConnectTimer = new QTimer(this);
+    m_autoConnectTimer->setInterval(kAutoConnectIntervalMs);
+    connect(m_autoConnectTimer, &QTimer::timeout,
+            this, &MainWindow::onAutoConnectScan);
+    m_autoConnectTimer->start();
+
+    QTimer::singleShot(0, this, &MainWindow::onAutoConnectScan);
+}
+
+bool MainWindow::tryAutoConnect()
+{
+    if (!m_autoConnectEnabled || m_connected || m_connecting)
+        return false;
+
+    const auto ports = QSerialPortInfo::availablePorts();
+    for (const auto &port : ports) {
+        if (port.serialNumber() != QString::fromLatin1(kAutoConnectSerial))
+            continue;
+
+        SerialPortConfig config;
+        config.portName = port.portName();
+        config.baudRate = kAutoConnectBaudRate;
+
+        m_portName = config.portName;
+        m_baudRate = config.baudRate;
+        m_connecting = true;
+        m_statusText->setText(QStringLiteral("自动连接中... %1").arg(m_portName));
+        m_portManager->connectToPort(config);
+        return true;
+    }
+
+    return false;
 }
 
 // ── Slot implementations ──
@@ -112,18 +159,21 @@ void MainWindow::onSettingsConnect(const SerialPortConfig &config)
 {
     m_portName = config.portName;
     m_baudRate = config.baudRate;
+    m_connecting = true;
     m_statusText->setText(QStringLiteral("连接中... %1").arg(m_portName));
     m_portManager->connectToPort(config);
 }
 
 void MainWindow::onSettingsDisconnect()
 {
+    m_connecting = false;
     m_portManager->disconnectFromPort();
 }
 
 void MainWindow::onConnected()
 {
     m_connected = true;
+    m_connecting = false;
     m_statusText->setText(QStringLiteral("已连接 — %1").arg(m_portName));
     m_settingsPage->setConnectionState(true);
     m_monitoringPage->onConnectionChanged(true);
@@ -132,6 +182,7 @@ void MainWindow::onConnected()
 void MainWindow::onDisconnected()
 {
     m_connected = false;
+    m_connecting = false;
     m_statusText->setText(QStringLiteral("已断开"));
 
     m_settingsPage->setConnectionState(false);
@@ -140,6 +191,7 @@ void MainWindow::onDisconnected()
 
 void MainWindow::onErrorOccurred(const QString &error)
 {
+    m_connecting = false;
     m_statusText->setText(QStringLiteral("错误: %1").arg(error));
 }
 
@@ -188,6 +240,18 @@ void MainWindow::onLoadControlSendDecoyPdo(int index)
 void MainWindow::onLoadControlSendDecoyPps(int voltageMv)
 {
     m_portManager->sendSetDecoyPps(voltageMv);
+}
+
+void MainWindow::onAutoConnectScan()
+{
+    tryAutoConnect();
+}
+
+void MainWindow::onAutoConnectEnabledChanged(bool enabled)
+{
+    m_autoConnectEnabled = enabled;
+    if (enabled)
+        tryAutoConnect();
 }
 
 // ── Frameless window drag/resize ──
