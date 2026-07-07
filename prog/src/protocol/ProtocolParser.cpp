@@ -3,9 +3,10 @@
 #include <QJsonDocument>
 #include <QJsonParseError>
 
-// Match <chipId,command> prefix (chipId = 8 hex chars, command = 3 digits)
+// Match <chipId,command> prefix. Uplink chipId is accepted as-is and is not
+// compared against the configured downlink chipId.
 static const QRegularExpression HEADER_RE(
-    QStringLiteral(R"(^<([A-Fa-f0-9]{8}),(\d{3})>)")
+    QStringLiteral(R"(^<([^,>]+),(\d{3})>)")
 );
 
 QVector<ChargerProtocol::ParsedFrame> ProtocolParser::parse(QByteArray &buffer)

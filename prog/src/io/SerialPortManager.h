@@ -26,6 +26,7 @@ public:
     void sendSetMode(const QString &mode);
     void sendSetDecoyPdo(int index);
     void sendSetDecoyPps(int voltageMv);
+    void sendSetDecoyMode(const QString &mode);
     void sendRawData(const QByteArray &data);
 
     void setChipId(const QString &chipId);
@@ -37,6 +38,7 @@ signals:
     void monitoringDataReceived(ChargerProtocol::MonitoringData data);
     void commandResponseReceived(ChargerProtocol::CommandResponse response);
     void protocolInfoReceived(ChargerProtocol::MonitoringData data);
+    void pdPacketReceived(ChargerProtocol::PdPacketData data);
     void rawFrameReceived(const QString &rawData);
 
 private slots:

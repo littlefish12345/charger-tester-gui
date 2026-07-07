@@ -6,6 +6,7 @@
 
 class ElaDoubleSpinBox;
 class ElaPushButton;
+class QLabel;
 class QTableWidget;
 
 class ProtocolAnalysisPage : public QWidget
@@ -18,28 +19,39 @@ public:
 signals:
     void sendSetDecoyPdo(int index);
     void sendSetDecoyPps(int voltageMv);
+    void sendSetDecoyMode(const QString &mode);
 
 public slots:
-    void appendPdPacket(const QString &rawData);
+    void onPdPacketReceived(ChargerProtocol::PdPacketData data);
     void onProtocolInfoReceived(ChargerProtocol::MonitoringData data);
+    void onInaStatusReceived(ChargerProtocol::MonitoringData data);
     void clearLog();
 
 private slots:
     void updateTheme();
     void onPdoClicked();
     void onPpsClicked();
+    void onDecoyModeClicked();
+    void clearPdPackets();
 
 private:
     void setupUi();
+    void updateDecoyModeButton();
 
     QTableWidget     *m_pdTable       = nullptr;  // PD packets table
     QTableWidget     *m_protoTable    = nullptr;  // PDO/PPS table
     QWidget          *m_pdLabel       = nullptr;
     QWidget          *m_tableLabel    = nullptr;
+    QLabel           *m_voltageLabel  = nullptr;
+    QLabel           *m_currentLabel  = nullptr;
+    QLabel           *m_powerLabel    = nullptr;
+    ElaPushButton    *m_clearPdBtn    = nullptr;
+    ElaPushButton    *m_decoyModeBtn  = nullptr;
     ElaDoubleSpinBox *m_ppsVoltageSpin = nullptr;
     ElaPushButton    *m_ppsBtn        = nullptr;
 
     QVector<int> m_pdoIndices;
+    QString m_decoyMode = QStringLiteral("trick");
 };
 
 #endif // PROTOCOL_ANALYSIS_PAGE_H

@@ -7,6 +7,7 @@
 class ElaComboBox;
 class QCheckBox;
 class QGroupBox;
+class QLineEdit;
 class QPushButton;
 class QSpinBox;
 
@@ -19,12 +20,14 @@ public:
 
     int refreshIntervalMs() const;
     bool autoConnectEnabled() const;
+    QString chipId() const;
     void refreshPortList();
     void selectPort(const QString &portName);
 
 signals:
     void refreshIntervalChanged(int ms);
     void autoConnectEnabledChanged(bool enabled);
+    void chipIdChanged(const QString &chipId);
     void portsRefreshed();
     void connectRequested(const SerialPortConfig &config);
     void disconnectRequested();
@@ -41,9 +44,11 @@ private slots:
 private:
     void setupUi();
     void updateManualControls();
+    bool hasSelectablePort() const;
 
     ElaComboBox *m_portCombo    = nullptr;
     ElaComboBox *m_baudCombo    = nullptr;
+    QLineEdit   *m_chipIdEdit   = nullptr;
     QCheckBox   *m_autoConnectCheck = nullptr;
     QSpinBox    *m_refreshSpin  = nullptr;
     QPushButton *m_refreshBtn = nullptr;
@@ -51,6 +56,7 @@ private:
     QGroupBox   *m_serialGroup  = nullptr;
     QGroupBox   *m_displayGroup = nullptr;
     bool         m_connected    = false;
+    bool         m_connecting   = false;
 };
 
 #endif // SETTINGS_PAGE_H

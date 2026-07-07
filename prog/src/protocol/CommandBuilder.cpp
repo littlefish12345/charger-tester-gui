@@ -42,6 +42,13 @@ QByteArray CommandBuilder::buildSetDecoyPps(int voltageMv)
     return buildFrame(103, json);
 }
 
+QByteArray CommandBuilder::buildSetDecoyMode(const QString &mode)
+{
+    QJsonObject json;
+    json["mode"] = mode;
+    return buildFrame(104, json);
+}
+
 QByteArray CommandBuilder::buildFrame(int command, const QJsonObject &json)
 {
     QJsonDocument doc(json);

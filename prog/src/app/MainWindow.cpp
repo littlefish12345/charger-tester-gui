@@ -91,14 +91,16 @@ void MainWindow::setupConnections()
             this, &MainWindow::onCommandResponse);
     connect(m_portManager, &SerialPortManager::protocolInfoReceived,
             this, &MainWindow::onProtocolInfoReceived);
-    connect(m_portManager, &SerialPortManager::rawFrameReceived,
-            this, &MainWindow::onRawFrameReceived);
+    connect(m_portManager, &SerialPortManager::pdPacketReceived,
+            this, &MainWindow::onPdPacketReceived);
 
     // Protocol analysis page -> manager (decoy commands)
     connect(m_protocolAnalysisPage, &ProtocolAnalysisPage::sendSetDecoyPdo,
             this, &MainWindow::onLoadControlSendDecoyPdo);
     connect(m_protocolAnalysisPage, &ProtocolAnalysisPage::sendSetDecoyPps,
             this, &MainWindow::onLoadControlSendDecoyPps);
+    connect(m_protocolAnalysisPage, &ProtocolAnalysisPage::sendSetDecoyMode,
+            this, &MainWindow::onLoadControlSendDecoyMode);
 
     // Load control page -> manager (commands)
     connect(m_loadControlPage, &LoadControlPage::sendSetMode,
@@ -115,6 +117,10 @@ void MainWindow::setupConnections()
             this, &MainWindow::onRefreshIntervalChanged);
     connect(m_settingsPage, &SettingsPage::autoConnectEnabledChanged,
             this, &MainWindow::onAutoConnectEnabledChanged);
+    connect(m_settingsPage, &SettingsPage::chipIdChanged,
+            this, &MainWindow::onChipIdChanged);
+
+    onChipIdChanged(m_settingsPage->chipId());
 }
 
 void MainWindow::setupAutoConnect()
@@ -131,10 +137,13 @@ void MainWindow::setupAutoConnect()
 
 bool MainWindow::tryAutoConnect()
 {
+    if (!m_autoConnectEnabled)
+        return false;
+
     if (m_settingsPage)
         m_settingsPage->refreshPortList();
 
-    if (!m_autoConnectEnabled || m_connected || m_connecting)
+    if (m_connected || m_connecting)
         return false;
 
     const auto ports = QSerialPortInfo::availablePorts();
@@ -150,6 +159,7 @@ bool MainWindow::tryAutoConnect()
         m_baudRate = config.baudRate;
         m_connecting = true;
         m_autoConnected = true;
+        m_errorStatusActive = false;
         m_settingsPage->selectPort(m_portName);
         m_statusText->setText(QStringLiteral("自动连接中... %1").arg(m_portName));
         m_portManager->connectToPort(config);
@@ -167,6 +177,7 @@ void MainWindow::onSettingsConnect(const SerialPortConfig &config)
     m_baudRate = config.baudRate;
     m_connecting = true;
     m_autoConnected = false;
+    m_errorStatusActive = false;
     m_statusText->setText(QStringLiteral("连接中... %1").arg(m_portName));
     m_portManager->connectToPort(config);
 }
@@ -174,6 +185,7 @@ void MainWindow::onSettingsConnect(const SerialPortConfig &config)
 void MainWindow::onSettingsDisconnect()
 {
     m_connecting = false;
+    m_errorStatusActive = false;
     m_portManager->disconnectFromPort();
 }
 
@@ -181,6 +193,7 @@ void MainWindow::onConnected()
 {
     m_connected = true;
     m_connecting = false;
+    m_errorStatusActive = false;
     m_statusText->setText(QStringLiteral("已连接 %1").arg(m_portName));
     m_settingsPage->setConnectionState(true);
     m_monitoringPage->onConnectionChanged(true);
@@ -191,7 +204,8 @@ void MainWindow::onDisconnected()
     m_connected = false;
     m_connecting = false;
     m_autoConnected = false;
-    m_statusText->setText(QStringLiteral("已断开"));
+    if (!m_errorStatusActive)
+        m_statusText->setText(QStringLiteral("已断开"));
 
     m_settingsPage->setConnectionState(false);
     m_monitoringPage->onConnectionChanged(false);
@@ -199,13 +213,19 @@ void MainWindow::onDisconnected()
 
 void MainWindow::onErrorOccurred(const QString &error)
 {
+    m_connected = false;
     m_connecting = false;
+    m_autoConnected = false;
+    m_errorStatusActive = true;
     m_statusText->setText(QStringLiteral("错误: %1").arg(error));
+    m_settingsPage->setConnectionState(false);
+    m_monitoringPage->onConnectionChanged(false);
 }
 
 void MainWindow::onMonitoringData(ChargerProtocol::MonitoringData data)
 {
     m_monitoringPage->onMonitoringData(data);
+    m_protocolAnalysisPage->onInaStatusReceived(data);
 }
 
 void MainWindow::onCommandResponse(ChargerProtocol::CommandResponse response)
@@ -219,9 +239,9 @@ void MainWindow::onProtocolInfoReceived(ChargerProtocol::MonitoringData data)
     m_loadControlPage->onMonitoringData(data);
 }
 
-void MainWindow::onRawFrameReceived(const QString &rawData)
+void MainWindow::onPdPacketReceived(ChargerProtocol::PdPacketData data)
 {
-    m_protocolAnalysisPage->appendPdPacket(rawData);
+    m_protocolAnalysisPage->onPdPacketReceived(data);
 }
 
 void MainWindow::onRefreshIntervalChanged(int ms)
@@ -250,6 +270,11 @@ void MainWindow::onLoadControlSendDecoyPps(int voltageMv)
     m_portManager->sendSetDecoyPps(voltageMv);
 }
 
+void MainWindow::onLoadControlSendDecoyMode(const QString &mode)
+{
+    m_portManager->sendSetDecoyMode(mode);
+}
+
 void MainWindow::onAutoConnectScan()
 {
     tryAutoConnect();
@@ -265,6 +290,13 @@ void MainWindow::onAutoConnectEnabledChanged(bool enabled)
 
     if (enabled)
         tryAutoConnect();
+}
+
+void MainWindow::onChipIdChanged(const QString &chipId)
+{
+    m_portManager->setChipId(chipId.trimmed().isEmpty()
+                                 ? QStringLiteral("20520501")
+                                 : chipId.trimmed());
 }
 
 // ── Frameless window drag/resize ──

@@ -33,14 +33,16 @@ private slots:
     void onMonitoringData(ChargerProtocol::MonitoringData data);
     void onCommandResponse(ChargerProtocol::CommandResponse response);
     void onProtocolInfoReceived(ChargerProtocol::MonitoringData data);
-    void onRawFrameReceived(const QString &rawData);
+    void onPdPacketReceived(ChargerProtocol::PdPacketData data);
     void onRefreshIntervalChanged(int ms);
     void onLoadControlSendMode(const QString &mode);
     void onLoadControlSendPower(int currentMa, int voltageMv);
     void onLoadControlSendDecoyPdo(int index);
     void onLoadControlSendDecoyPps(int voltageMv);
+    void onLoadControlSendDecoyMode(const QString &mode);
     void onAutoConnectScan();
     void onAutoConnectEnabledChanged(bool enabled);
+    void onChipIdChanged(const QString &chipId);
 
 private:
     void setupPages();
@@ -70,6 +72,7 @@ private:
     bool     m_connecting   = false;
     bool     m_autoConnectEnabled = true;
     bool     m_autoConnected = false;
+    bool     m_errorStatusActive = false;
     QString  m_portName;
     int      m_baudRate     = 115200;
     QTimer  *m_autoConnectTimer = nullptr;

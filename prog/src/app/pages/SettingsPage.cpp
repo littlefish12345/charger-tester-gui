@@ -5,6 +5,7 @@
 #include "utils/ThemeUtils.h"
 #include <QCheckBox>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QVBoxLayout>
@@ -37,6 +38,11 @@ void SettingsPage::setupUi()
     m_baudCombo->addItems({"9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"});
     m_baudCombo->setCurrentText("115200");
 
+    m_chipIdEdit = new QLineEdit(m_serialGroup);
+    m_chipIdEdit->setMaxLength(32);
+    m_chipIdEdit->setText(QStringLiteral("20520501"));
+    m_chipIdEdit->setPlaceholderText(QStringLiteral("20520501"));
+
     m_refreshBtn = new QPushButton(QStringLiteral("刷新"), m_serialGroup);
     m_refreshBtn->setObjectName("refreshBtn");
     m_refreshBtn->setMinimumWidth(56);
@@ -45,6 +51,7 @@ void SettingsPage::setupUi()
     auto *portRow = new QHBoxLayout();
     portRow->addWidget(m_portCombo, 1);
     portRow->addWidget(m_refreshBtn);
+    serialLayout->addRow(QStringLiteral("芯片ID:"), m_chipIdEdit);
     serialLayout->addRow(QStringLiteral("端口:"), portRow);
     serialLayout->addRow(QStringLiteral("波特率:"), m_baudCombo);
 
@@ -81,6 +88,15 @@ void SettingsPage::setupUi()
         emit autoConnectEnabledChanged(enabled);
         saveSettings();
         updateManualControls();
+    });
+    connect(m_chipIdEdit, &QLineEdit::editingFinished, this, [this]() {
+        QString value = chipId();
+        if (value.isEmpty()) {
+            value = QStringLiteral("20520501");
+            m_chipIdEdit->setText(value);
+        }
+        emit chipIdChanged(value);
+        saveSettings();
     });
 
     refreshPortList();
@@ -134,6 +150,7 @@ void SettingsPage::refreshPortList()
     if (!selectedPort.isEmpty())
         selectPort(selectedPort);
 
+    updateManualControls();
     emit portsRefreshed();
 }
 
@@ -152,16 +169,21 @@ void SettingsPage::onConnectClicked()
     if (autoConnectEnabled())
         return;
 
-    if (!m_connected) {
+    if (!m_connected && !m_connecting) {
         QString portName = m_portCombo->currentData().toString();
-        if (portName.isEmpty())
-            return;
+        if (portName.isEmpty()) {
+            refreshPortList();
+            portName = m_portCombo->currentData().toString();
+            if (portName.isEmpty())
+                return;
+        }
 
         SerialPortConfig config;
         config.portName = portName;
         config.baudRate = m_baudCombo->currentText().toInt();
 
-        m_connectBtn->setText(QStringLiteral("断开"));
+        m_connecting = true;
+        m_connectBtn->setText(QStringLiteral("连接中..."));
         updateManualControls();
 
         emit connectRequested(config);
@@ -173,6 +195,7 @@ void SettingsPage::onConnectClicked()
 void SettingsPage::setConnectionState(bool connected)
 {
     m_connected = connected;
+    m_connecting = false;
     auto c = ThemeColors::current();
     if (connected) {
         m_connectBtn->setText(QStringLiteral("断开"));
@@ -208,9 +231,15 @@ bool SettingsPage::autoConnectEnabled() const
     return m_autoConnectCheck && m_autoConnectCheck->isChecked();
 }
 
+QString SettingsPage::chipId() const
+{
+    return m_chipIdEdit ? m_chipIdEdit->text().trimmed() : QStringLiteral("20520501");
+}
+
 void SettingsPage::saveSettings()
 {
     QSettings settings;
+    settings.setValue("serial/chipId", chipId());
     settings.setValue("serial/baudRate", m_baudCombo->currentText().toInt());
     settings.setValue("serial/autoConnect", autoConnectEnabled());
     settings.setValue("display/refreshMs", m_refreshSpin->value());
@@ -219,6 +248,9 @@ void SettingsPage::saveSettings()
 void SettingsPage::loadSettings()
 {
     QSettings settings;
+    QString chipId = settings.value("serial/chipId", QStringLiteral("20520501")).toString();
+    m_chipIdEdit->setText(chipId.trimmed().isEmpty() ? QStringLiteral("20520501") : chipId.trimmed());
+
     int baud = settings.value("serial/baudRate", 115200).toInt();
     m_baudCombo->setCurrentText(QString::number(baud));
 
@@ -233,7 +265,9 @@ void SettingsPage::loadSettings()
 void SettingsPage::updateManualControls()
 {
     const bool manualEnabled = !autoConnectEnabled();
-    const bool canEditPort = manualEnabled && !m_connected;
+    const bool canEditPort = manualEnabled && !m_connected && !m_connecting;
+    const bool canUseConnect = manualEnabled
+        && (m_connected || m_connecting || hasSelectablePort());
 
     if (m_portCombo)
         m_portCombo->setEnabled(canEditPort);
@@ -242,5 +276,10 @@ void SettingsPage::updateManualControls()
     if (m_refreshBtn)
         m_refreshBtn->setEnabled(canEditPort);
     if (m_connectBtn)
-        m_connectBtn->setEnabled(manualEnabled);
+        m_connectBtn->setEnabled(canUseConnect);
+}
+
+bool SettingsPage::hasSelectablePort() const
+{
+    return m_portCombo && !m_portCombo->currentData().toString().isEmpty();
 }

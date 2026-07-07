@@ -8,7 +8,7 @@
 class CommandBuilder
 {
 public:
-    explicit CommandBuilder(const QString &chipId = QStringLiteral("ABCDABCD"));
+    explicit CommandBuilder(const QString &chipId = QStringLiteral("20520501"));
 
     void setChipId(const QString &chipId);
 
@@ -23,6 +23,9 @@ public:
 
     // 103: set decoy target — PPS mode (set target voltage mV)
     QByteArray buildSetDecoyPps(int voltageMv);
+
+    // 104: switch decoy/listen mode ("trick"/"listen")
+    QByteArray buildSetDecoyMode(const QString &mode);
 
 private:
     QByteArray buildFrame(int command, const QJsonObject &json);

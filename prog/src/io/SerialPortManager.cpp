@@ -2,6 +2,41 @@
 #include "SerialWorker.h"
 #include "protocol/CommandBuilder.h"
 #include <QJsonArray>
+#include <QJsonValue>
+
+namespace {
+
+int jsonInt(const QJsonValue &value, int fallback = 0)
+{
+    if (value.isDouble())
+        return value.toInt(fallback);
+
+    if (value.isString()) {
+        bool ok = false;
+        const int result = value.toString().trimmed().toInt(&ok);
+        if (ok)
+            return result;
+    }
+
+    return fallback;
+}
+
+double jsonDouble(const QJsonValue &value, double fallback = 0)
+{
+    if (value.isDouble())
+        return value.toDouble(fallback);
+
+    if (value.isString()) {
+        bool ok = false;
+        const double result = value.toString().trimmed().toDouble(&ok);
+        if (ok)
+            return result;
+    }
+
+    return fallback;
+}
+
+} // namespace
 
 SerialPortManager::SerialPortManager(QObject *parent)
     : QObject(parent)
@@ -49,7 +84,7 @@ void SerialPortManager::connectToPort(const SerialPortConfig &config)
     });
     connect(m_worker, &SerialWorker::errorOccurred, this, [this](const QString &err) {
         emit errorOccurred(err);
-        startReconnectTimer();
+        disconnectFromPort();
     });
 
     m_thread->start();
@@ -105,6 +140,12 @@ void SerialPortManager::sendSetDecoyPps(int voltageMv)
     sendRawData(data);
 }
 
+void SerialPortManager::sendSetDecoyMode(const QString &mode)
+{
+    QByteArray data = m_builder->buildSetDecoyMode(mode);
+    sendRawData(data);
+}
+
 void SerialPortManager::sendRawData(const QByteArray &data)
 {
     if (m_worker) {
@@ -132,8 +173,8 @@ void SerialPortManager::routeFrame(const ChargerProtocol::ParsedFrame &frame)
     switch (frame.command) {
     case Command::RESPONSE: {
         CommandResponse resp;
-        resp.command = frame.json.value("command").toString().toInt();
-        resp.result  = frame.json.value("result").toString().toInt();
+        resp.command = jsonInt(frame.json.value("command"));
+        resp.result  = jsonInt(frame.json.value("result"), -1);
         resp.valid   = true;
         emit commandResponseReceived(resp);
         break;
@@ -147,18 +188,18 @@ void SerialPortManager::routeFrame(const ChargerProtocol::ParsedFrame &frame)
             for (const auto &val : pdoArr) {
                 QJsonObject obj = val.toObject();
                 PdoEntry entry;
-                entry.index     = obj.value("index").toInt();
-                entry.voltageMv = obj.value("V").toString().toDouble();
-                entry.currentMa = obj.value("I").toString().toDouble();
+                entry.index     = jsonInt(obj.value("index"), data.pdoList.size());
+                entry.voltageMv = jsonDouble(obj.value("V"));
+                entry.currentMa = jsonDouble(obj.value("I"));
                 data.pdoList.append(entry);
             }
         }
 
         if (frame.json.contains("pps") && frame.json["pps"].isObject()) {
             QJsonObject ppsObj = frame.json["pps"].toObject();
-            data.pps.minVoltageMv = ppsObj.value("min_V").toString().toDouble();
-            data.pps.maxVoltageMv = ppsObj.value("max_V").toString().toDouble();
-            data.pps.currentMa    = ppsObj.value("I").toString().toDouble();
+            data.pps.minVoltageMv = jsonDouble(ppsObj.value("min_V"));
+            data.pps.maxVoltageMv = jsonDouble(ppsObj.value("max_V"));
+            data.pps.currentMa    = jsonDouble(ppsObj.value("I"));
             data.pps.valid        = true;
         }
 
@@ -170,11 +211,44 @@ void SerialPortManager::routeFrame(const ChargerProtocol::ParsedFrame &frame)
         emit protocolInfoReceived(data);
         break;
     }
+    case Command::REPORT_PD_PACKET: {
+        // 202: PD listener packet bytes
+        PdPacketData data;
+        data.rawData = frame.rawData;
+
+        if (frame.json.contains("pack") && frame.json["pack"].isArray()) {
+            const auto packArr = frame.json["pack"].toArray();
+            for (const auto &val : packArr) {
+                int byte = 0;
+                bool ok = false;
+
+                if (val.isDouble()) {
+                    byte = val.toInt();
+                    ok = true;
+                } else if (val.isString()) {
+                    QString text = val.toString().trimmed();
+                    int base = 10;
+                    if (text.startsWith(QStringLiteral("0x"), Qt::CaseInsensitive)) {
+                        text = text.mid(2);
+                        base = 16;
+                    }
+                    byte = text.toInt(&ok, base);
+                }
+
+                if (ok)
+                    data.bytes.append(qBound(0, byte, 255));
+            }
+        }
+
+        data.valid = !data.bytes.isEmpty();
+        emit pdPacketReceived(data);
+        break;
+    }
     case Command::REPORT_STATUS: {
-        // 202: running V/I status
+        // 203: INA228 running V/I status
         MonitoringData data;
-        data.voltageMv = frame.json.value("V").toString().toDouble();
-        data.currentMa = frame.json.value("I").toString().toDouble();
+        data.voltageMv = jsonDouble(frame.json.value("V"));
+        data.currentMa = jsonDouble(frame.json.value("I"));
         emit monitoringDataReceived(data);
         break;
     }

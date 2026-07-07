@@ -20,12 +20,14 @@ namespace Command {
     constexpr int SET_POWER        = 101;
     constexpr int SET_MODE         = 102;
     constexpr int SET_DECOY        = 103;
+    constexpr int SET_DECOY_MODE   = 104;
     constexpr int RESPONSE         = 200;
     constexpr int REPORT_PROTOCOLS = 201;
-    constexpr int REPORT_STATUS    = 202;
+    constexpr int REPORT_PD_PACKET = 202;
+    constexpr int REPORT_STATUS    = 203;
 }
 
-// PDO entry (from 202 report)
+// PDO entry (from 201 report)
 struct PdoEntry {
     int    index = 0;
     double voltageMv = 0;
@@ -35,7 +37,7 @@ struct PdoEntry {
     double currentA() const { return currentMa  / 1000.0; }
 };
 
-// PPS info (from 202 report)
+// PPS info (from 201 report)
 struct PpsInfo {
     double minVoltageMv = 0;
     double maxVoltageMv = 0;
@@ -52,7 +54,7 @@ struct ParsedFrame {
     QString    rawData;
 };
 
-// Monitoring data (from command 202)
+// Monitoring data (from command 203)
 struct MonitoringData {
     QVector<PdoEntry> pdoList;
     PpsInfo           pps;
@@ -62,6 +64,13 @@ struct MonitoringData {
     double currentA() const { return currentMa / 1000.0; }
     double voltageV() const { return voltageMv / 1000.0; }
     double powerW()   const { return currentA() * voltageV(); }
+};
+
+// PD packet data (from command 202)
+struct PdPacketData {
+    QVector<int> bytes;
+    QString      rawData;
+    bool         valid = false;
 };
 
 // Command response (from command 200)
