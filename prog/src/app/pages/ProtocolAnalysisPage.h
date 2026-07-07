@@ -52,6 +52,9 @@ private:
 
     QVector<int> m_pdoIndices;
     QString m_decoyMode = QStringLiteral("trick");
+
+    // Cache last Source_Capabilities PDOs for RDO type detection
+    QVector<quint32> m_lastSourcePdos;
 };
 
 #endif // PROTOCOL_ANALYSIS_PAGE_H

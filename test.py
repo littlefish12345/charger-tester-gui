@@ -79,8 +79,8 @@ def cmd_protocol_info(ser, pdo_list=None, pps=None):
     payload = {}
     if pdo_list is None:
         pdo_list = [
-            {"index": 0, "V": "5000", "I": "3000"},
-            {"index": 1, "V": "9000", "I": "3000"},
+            {"index": 1, "V": "5000", "I": "3000"},
+            {"index": 2, "V": "9000", "I": "3000"},
         ]
     payload["pdo"] = pdo_list
     if pps is not None:
@@ -97,9 +97,9 @@ def cmd_auto_poll(ser, interval=1.0, count=0):
     """自动定时上报监测数据"""
     print(f"自动上报: 间隔={interval}s, 次数={'无限' if count == 0 else count}")
     pdo_options = [
-        [{"index": 0, "V": "5000", "I": "3000"}, {"index": 1, "V": "9000", "I": "3000"}],
-        [{"index": 0, "V": "5000", "I": "3000"}, {"index": 1, "V": "9000", "I": "2000"}, {"index": 2, "V": "12000", "I": "2000"}],
-        [{"index": 0, "V": "5000", "I": "3000"}, {"index": 1, "V": "9000", "I": "3000"}, {"index": 2, "V": "15000", "I": "3000"}, {"index": 3, "V": "20000", "I": "2000"}],
+        [{"index": 1, "V": "5000", "I": "3000"}, {"index": 2, "V": "9000", "I": "3000"}],
+        [{"index": 1, "V": "5000", "I": "3000"}, {"index": 2, "V": "9000", "I": "2000"}, {"index": 3, "V": "12000", "I": "2000"}],
+        [{"index": 1, "V": "5000", "I": "3000"}, {"index": 2, "V": "9000", "I": "3000"}, {"index": 3, "V": "15000", "I": "3000"}, {"index": 4, "V": "20000", "I": "2000"}],
     ]
     i = 0
     try:
@@ -129,8 +129,8 @@ def cmd_raw(ser, text: str):
 # ---- 交互式菜单 ----
 
 DEFAULT_PDO = [
-    {"index": 0, "V": "5000", "I": "3000"},
-    {"index": 1, "V": "9000", "I": "3000"},
+    {"index": 1, "V": "5000", "I": "3000"},
+    {"index": 2, "V": "9000", "I": "3000"},
 ]
 DEFAULT_PPS = {"min_V": "3300", "max_V": "21000", "I": "5000"}
 

@@ -9,6 +9,7 @@
 #include <QHBoxLayout>
 #include <QSplitter>
 #include <QHeaderView>
+#include <QLineEdit>
 #include <QTime>
 #include <QPushButton>
 #include <QStringList>
@@ -146,100 +147,94 @@ QString extendedMessageName(int type)
     }
 }
 
-QString decodePdo(int number, quint32 object)
+QString decodePdo(quint32 object)
 {
     const int supplyType = static_cast<int>((object >> 30) & 0x3);
     switch (supplyType) {
     case 0: {
-        const int voltageMv = static_cast<int>(((object >> 10) & 0x3ff) * 50);
-        const int currentMa = static_cast<int>((object & 0x3ff) * 10);
-        QStringList flags;
-        if (object & (1u << 29)) flags << QStringLiteral("双角色电源");
-        if (object & (1u << 26)) flags << QStringLiteral("USB通信");
-        if (object & (1u << 25)) flags << QStringLiteral("双角色数据");
-        const QString flagText = flags.isEmpty()
-            ? QString()
-            : QStringLiteral(" (%1)").arg(flags.join(QStringLiteral(", ")));
-        return QStringLiteral("PDO%1 固定 %2/%3%4")
-            .arg(number)
-            .arg(voltageText(voltageMv), currentText(currentMa), flagText);
+        const int mv = static_cast<int>(((object >> 10) & 0x3ff) * 50);
+        const int ma = static_cast<int>((object & 0x3ff) * 10);
+        return QStringLiteral("%1V/%2A").arg(mv / 1000.0, 0, 'f', 1).arg(ma / 1000.0, 0, 'f', 2);
     }
     case 1: {
-        const int maxVoltageMv = static_cast<int>(((object >> 20) & 0x3ff) * 50);
-        const int minVoltageMv = static_cast<int>(((object >> 10) & 0x3ff) * 50);
-        const int powerMw = static_cast<int>((object & 0x3ff) * 250);
-        return QStringLiteral("PDO%1 电池 %2-%3/%4")
-            .arg(number)
-            .arg(voltageText(minVoltageMv), voltageText(maxVoltageMv), powerText(powerMw));
+        const int mvMax = static_cast<int>(((object >> 20) & 0x3ff) * 50);
+        const int mvMin = static_cast<int>(((object >> 10) & 0x3ff) * 50);
+        const int mw    = static_cast<int>((object & 0x3ff) * 250);
+        return QStringLiteral("电池 %1-%2V/%3W").arg(mvMin / 1000.0, 0, 'f', 1).arg(mvMax / 1000.0, 0, 'f', 1).arg(mw / 1000.0, 0, 'f', 2);
     }
     case 2: {
-        const int maxVoltageMv = static_cast<int>(((object >> 20) & 0x3ff) * 50);
-        const int minVoltageMv = static_cast<int>(((object >> 10) & 0x3ff) * 50);
-        const int currentMa = static_cast<int>((object & 0x3ff) * 10);
-        return QStringLiteral("PDO%1 可变 %2-%3/%4")
-            .arg(number)
-            .arg(voltageText(minVoltageMv), voltageText(maxVoltageMv), currentText(currentMa));
+        const int mvMax = static_cast<int>(((object >> 20) & 0x3ff) * 50);
+        const int mvMin = static_cast<int>(((object >> 10) & 0x3ff) * 50);
+        const int ma    = static_cast<int>((object & 0x3ff) * 10);
+        return QStringLiteral("%1-%2V/%3A").arg(mvMin / 1000.0, 0, 'f', 1).arg(mvMax / 1000.0, 0, 'f', 1).arg(ma / 1000.0, 0, 'f', 2);
     }
     case 3: {
         const int augmentedType = static_cast<int>((object >> 28) & 0x3);
         if (augmentedType == 0) {
-            const int maxVoltageMv = static_cast<int>(((object >> 17) & 0xff) * 100);
-            const int minVoltageMv = static_cast<int>(((object >> 8) & 0xff) * 100);
-            const int currentMa = static_cast<int>((object & 0x7f) * 50);
-            return QStringLiteral("PDO%1 PPS %2-%3/%4")
-                .arg(number)
-                .arg(voltageText(minVoltageMv), voltageText(maxVoltageMv), currentText(currentMa));
+            const int mvMax = static_cast<int>(((object >> 17) & 0xff) * 100);
+            const int mvMin = static_cast<int>(((object >> 8) & 0xff) * 100);
+            const int ma    = static_cast<int>((object & 0x7f) * 50);
+            return QStringLiteral("PPS %1-%2V/%3A").arg(mvMin / 1000.0, 0, 'f', 1).arg(mvMax / 1000.0, 0, 'f', 1).arg(ma / 1000.0, 0, 'f', 2);
         }
-        return QStringLiteral("PDO%1 APDO(%2) %3")
-            .arg(number)
-            .arg(augmentedType)
-            .arg(hexWord32(object));
+        return QStringLiteral("APDO");
     }
     default:
-        return QStringLiteral("PDO%1 %2").arg(number).arg(hexWord32(object));
+        return QString();
     }
 }
 
-QString decodeRdo(quint32 object)
+static bool isPpsPdo(const QVector<quint32> &pdos, int objPos)
 {
-    const int objectPosition = static_cast<int>((object >> 28) & 0xf);
-    const int operatingMa = static_cast<int>((object & 0x3ff) * 10);
-    const int maxMa = static_cast<int>(((object >> 10) & 0x3ff) * 10);
-    const int ppsVoltageMv = static_cast<int>(((object >> 9) & 0xfff) * 20);
-    const int ppsCurrentMa = static_cast<int>((object & 0x7f) * 50);
-
-    QStringList flags;
-    if (object & (1u << 26)) flags << QStringLiteral("能力不匹配");
-    if (object & (1u << 25)) flags << QStringLiteral("USB通信");
-    if (object & (1u << 24)) flags << QStringLiteral("不挂起");
-
-    QString result = QStringLiteral("RDO PDO%1 固定/可变 %2, 最大 %3; PPS字段 %4/%5")
-        .arg(objectPosition)
-        .arg(currentText(operatingMa), currentText(maxMa),
-             voltageText(ppsVoltageMv), currentText(ppsCurrentMa));
-    if (!flags.isEmpty())
-        result += QStringLiteral(" (%1)").arg(flags.join(QStringLiteral(", ")));
-    return result;
+    if (objPos < 1 || objPos > pdos.size())
+        return false;
+    const quint32 pdo = pdos[objPos - 1];
+    return (pdo >> 30) == 3 && ((pdo >> 28) & 0x3) == 0;
 }
 
-QString decodeDataObject(int number, int messageType, quint32 object)
+QString decodeRdo(quint32 object, const QVector<quint32> &sourcePdos)
 {
+    // Object Position in RDO is already 1-based (1-7 = PDO1-PDO7)
+    // Object Position is 1-based
+    const int pdoIndex = static_cast<int>((object >> 28) & 0x7);
+
+    if (isPpsPdo(sourcePdos, pdoIndex)) {
+        const int ppsMv = static_cast<int>(((object >> 9) & 0x7ff) * 20);
+        const int ppsMa = static_cast<int>((object & 0x7f) * 50);
+        return QStringLiteral("PDO%1 PPS %2V/%3A  [%4]")
+            .arg(pdoIndex).arg(ppsMv / 1000.0, 0, 'f', 2).arg(ppsMa / 1000.0, 0, 'f', 2)
+            .arg(hexWord32(object));
+    }
+
+    // Fixed/Variable: look up PDO to show its voltage
+    const int opMa = static_cast<int>(((object >> 10) & 0x3ff) * 10);
+    if (pdoIndex >= 1 && pdoIndex <= sourcePdos.size()) {
+        const quint32 pdo = sourcePdos[pdoIndex - 1];
+        const int supplyType = static_cast<int>((pdo >> 30) & 0x3);
+        double pdoV = 0;
+        if (supplyType == 0)
+            pdoV = static_cast<int>(((pdo >> 10) & 0x3ff) * 50) / 1000.0;
+        else if (supplyType == 2)
+            pdoV = static_cast<int>(((pdo >> 10) & 0x3ff) * 50) / 1000.0;
+        if (pdoV > 0)
+            return QStringLiteral("PDO%1 %2V/%3A").arg(pdoIndex).arg(pdoV, 0, 'f', 1).arg(opMa / 1000.0, 0, 'f', 2);
+    }
+    return QStringLiteral("PDO%1 %2A").arg(pdoIndex).arg(opMa / 1000.0, 0, 'f', 2);
+}
+
+QString decodeDataObject(int number, int messageType, quint32 object, const QVector<quint32> &sourcePdos)
+{
+    Q_UNUSED(number);
     if (messageType == 1 || messageType == 4)
-        return decodePdo(number, object);
+        return decodePdo(object);
 
     if (messageType == 2)
-        return decodeRdo(object);
+        return decodeRdo(object, sourcePdos);
 
-    if (messageType == 3)
-        return QStringLiteral("BIST%1 模式%2 %3")
-            .arg(number)
-            .arg(static_cast<int>((object >> 28) & 0xf))
-            .arg(hexWord32(object));
-
-    return QStringLiteral("DO%1 %2").arg(number).arg(hexWord32(object));
+    // Unknown: return raw hex
+    return hexWord32(object);
 }
 
-void decodePdPacket(const ChargerProtocol::PdPacketData &packet,
+void decodePdPacket(const ChargerProtocol::PdPacketData &packet, QVector<quint32> &sourcePdos,
                     QString *direction,
                     QString *messageType,
                     QString *details)
@@ -261,53 +256,66 @@ void decodePdPacket(const ChargerProtocol::PdPacketData &packet,
     const int objectCount = (header >> 12) & 0x7;
     const bool extended = (header & 0x8000) != 0;
 
-    *direction = QStringLiteral("%1/%2")
-        .arg(powerRole ? QStringLiteral("Source") : QStringLiteral("Sink"),
-             dataRole ? QStringLiteral("DFP") : QStringLiteral("UFP"));
+    *direction = powerRole ? QStringLiteral("SRC") : QStringLiteral("SNK");
     *messageType = extended
         ? QStringLiteral("扩展 %1").arg(extendedMessageName(type))
         : (objectCount == 0
-               ? QStringLiteral("控制 %1").arg(controlMessageName(type))
-               : QStringLiteral("数据 %1").arg(dataMessageName(type)));
-
-    QStringList parts;
-    parts << QStringLiteral("Rev PD%1").arg(specRevisionName(specRevision))
-          << QStringLiteral("ID %1").arg(messageId)
-          << QStringLiteral("对象 %1").arg(objectCount)
-          << QStringLiteral("Header 0x%1")
-                 .arg(header, 4, 16, QLatin1Char('0'))
-                 .toUpper();
+               ? controlMessageName(type)
+               : dataMessageName(type));
 
     if (extended) {
-        if (packet.bytes.size() >= 4) {
-            const quint16 extHeader = static_cast<quint16>((packet.bytes[2] & 0xff)
-                | ((packet.bytes[3] & 0xff) << 8));
-            parts << QStringLiteral("扩展长度 %1").arg(extHeader & 0x1ff)
-                  << QStringLiteral("Chunk %1").arg((extHeader >> 11) & 0xf)
-                  << ((extHeader & (1u << 15))
-                          ? QStringLiteral("分块")
-                          : QStringLiteral("非分块"));
-        } else {
-            parts << QStringLiteral("扩展 Header 长度不足");
-        }
-        *details = parts.join(QStringLiteral("; "));
+        *details = QStringLiteral("(扩展消息)");
         return;
     }
 
-    const int expectedSize = 2 + objectCount * 4;
-    if (packet.bytes.size() < expectedSize) {
-        parts << QStringLiteral("长度不足 %1/%2 字节")
-                     .arg(packet.bytes.size())
-                     .arg(expectedSize);
+    if (objectCount == 0) {
+        // Control message — generate short description
+        switch (type) {
+        case 1:  *details = QStringLiteral("CRC确认"); break;
+        case 2:  *details = QStringLiteral("转到最小"); break;
+        case 3:  *details = QStringLiteral("接受"); break;
+        case 4:  *details = QStringLiteral("拒绝"); break;
+        case 5:  *details = QStringLiteral("Ping"); break;
+        case 6:  *details = QStringLiteral("电源就绪"); break;
+        case 7:  *details = QStringLiteral("请求Source能力"); break;
+        case 8:  *details = QStringLiteral("请求Sink能力"); break;
+        case 9:  break; // DR_Swap
+        case 10: break; // PR_Swap
+        case 11: break; // VCONN_Swap
+        case 12: *details = QStringLiteral("等待"); break;
+        case 13: *details = QStringLiteral("软复位"); break;
+        case 14: *details = QStringLiteral("数据复位"); break;
+        case 15: *details = QStringLiteral("复位完成"); break;
+        case 16: *details = QStringLiteral("不支持"); break;
+        case 17: *details = QStringLiteral("请求扩展能力"); break;
+        case 18: *details = QStringLiteral("请求状态"); break;
+        case 19: break; // FR_Swap
+        case 20: *details = QStringLiteral("请求PPS状态"); break;
+        case 21: *details = QStringLiteral("请求国家码"); break;
+        case 22: *details = QStringLiteral("请求扩展Sink能力"); break;
+        case 23: *details = QStringLiteral("请求Source信息"); break;
+        case 24: *details = QStringLiteral("请求版本"); break;
+        default: break;
+        }
+        return;
     }
 
     const int availableObjects = qMin(objectCount, (packet.bytes.size() - 2) / 4);
-    for (int i = 0; i < availableObjects; ++i) {
-        const quint32 object = readLe32(packet.bytes, 2 + i * 4);
-        parts << decodeDataObject(i + 1, type, object);
+
+    // Cache Source_Capabilities PDOs for RDO type detection
+    if (type == 1) {
+        sourcePdos.clear();
+        for (int i = 0; i < availableObjects; ++i)
+            sourcePdos.append(readLe32(packet.bytes, 2 + i * 4));
     }
 
-    *details = parts.join(QStringLiteral("; "));
+    QStringList parts;
+    for (int i = 0; i < availableObjects; ++i) {
+        const quint32 object = readLe32(packet.bytes, 2 + i * 4);
+        parts << decodeDataObject(i + 1, type, object, sourcePdos);
+    }
+
+    *details = parts.join(QStringLiteral(", "));
 }
 
 } // namespace
@@ -342,15 +350,14 @@ void ProtocolAnalysisPage::setupUi()
     pdTitleRow->addStretch();
     pdTitleRow->addWidget(m_clearPdBtn);
 
-    m_pdTable = new QTableWidget(0, 5, pdContainer);
+    m_pdTable = new QTableWidget(0, 4, pdContainer);
     m_pdTable->setHorizontalHeaderLabels({
-        QStringLiteral("时间"), QStringLiteral("方向"), QStringLiteral("类型"),
-        QStringLiteral("数据"), QStringLiteral("原始数据")});
+        QStringLiteral("时间"), QStringLiteral("来源"), QStringLiteral("类型"),
+        QStringLiteral("内容")});
     m_pdTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_pdTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     m_pdTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     m_pdTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
-    m_pdTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Stretch);
     m_pdTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_pdTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_pdTable->setTextElideMode(Qt::ElideRight);
@@ -407,9 +414,15 @@ void ProtocolAnalysisPage::setupUi()
     m_ppsVoltageSpin->setRange(0, 21.0);
     m_ppsVoltageSpin->setDecimals(2);
     m_ppsVoltageSpin->setSuffix(" V");
-    m_ppsVoltageSpin->setSingleStep(0.1);
+    m_ppsVoltageSpin->setSingleStep(0.02);
     m_ppsVoltageSpin->setMinimumWidth(200);
     m_ppsVoltageSpin->setEnabled(false);
+    // Fix decimal point input with proper floating-point validator
+    m_ppsVoltageSpin->setCorrectionMode(QAbstractSpinBox::CorrectToNearestValue);
+    if (auto *le = m_ppsVoltageSpin->findChild<QLineEdit*>()) {
+        le->setValidator(new QDoubleValidator(0, 21.0, 2, le));
+        le->setClearButtonEnabled(false);
+    }
 
     m_ppsBtn = new ElaPushButton(QStringLiteral("确认诱骗"), protoContainer);
     m_ppsBtn->setEnabled(false);
@@ -475,19 +488,17 @@ void ProtocolAnalysisPage::onPdPacketReceived(ChargerProtocol::PdPacketData data
     QString direction;
     QString messageType;
     QString details;
-    decodePdPacket(data, &direction, &messageType, &details);
-
-    QString rawHex = bytesToHex(data.bytes);
-    if (rawHex.isEmpty())
-        rawHex = data.rawData;
+    decodePdPacket(data, m_lastSourcePdos, &direction, &messageType, &details);
 
     int row = m_pdTable->rowCount();
     m_pdTable->insertRow(row);
 
+    QString rawHex = bytesToHex(data.bytes);
+
     auto timeStr = QTime::currentTime().toString("hh:mm:ss.zzz");
     auto setCell = [&](int column, const QString &text) {
         auto *item = new QTableWidgetItem(text);
-        item->setToolTip(text);
+        item->setToolTip(rawHex);
         m_pdTable->setItem(row, column, item);
     };
 
@@ -495,7 +506,6 @@ void ProtocolAnalysisPage::onPdPacketReceived(ChargerProtocol::PdPacketData data
     setCell(1, direction);
     setCell(2, messageType);
     setCell(3, details);
-    setCell(4, rawHex);
 
     // Auto-scroll
     m_pdTable->scrollToBottom();
@@ -523,15 +533,21 @@ void ProtocolAnalysisPage::onProtocolInfoReceived(ChargerProtocol::MonitoringDat
     m_protoTable->setRowCount(0);
     m_pdoIndices.clear();
 
-    for (const auto &pdo : data.pdoList) {
+    const bool haveRawPdos = (m_lastSourcePdos.size() == data.pdoList.size());
+    for (int i = 0; i < data.pdoList.size(); ++i) {
+        const auto &pdo = data.pdoList[i];
         int row = m_protoTable->rowCount();
         m_protoTable->insertRow(row);
+        // Use decoded PDO from Source_Capabilities if available, else simple V/A
+        QString desc;
+        if (haveRawPdos)
+            desc = decodePdo(m_lastSourcePdos[i]);
+        if (desc.isEmpty())
+            desc = QStringLiteral("%1V/%2A").arg(pdo.voltageV(), 0, 'f', 1).arg(pdo.currentA(), 0, 'f', 2);
+
         m_protoTable->setItem(row, 0, new QTableWidgetItem(
-            QStringLiteral("PDO %1").arg(pdo.index)));
-        m_protoTable->setItem(row, 1, new QTableWidgetItem(
-            QStringLiteral("%1V / %2A")
-                .arg(pdo.voltageV(), 0, 'f', 1)
-                .arg(pdo.currentA(), 0, 'f', 2)));
+            QStringLiteral("PDO %1  %2V").arg(pdo.index).arg(pdo.voltageV(), 0, 'f', 1)));
+        m_protoTable->setItem(row, 1, new QTableWidgetItem(desc));
 
         auto *btn = new QPushButton(QStringLiteral("诱骗"), m_protoTable);
         btn->setProperty("pdoIndex", pdo.index);
@@ -570,7 +586,7 @@ void ProtocolAnalysisPage::onPdoClicked()
 
 void ProtocolAnalysisPage::onPpsClicked()
 {
-    int mv = static_cast<int>(m_ppsVoltageSpin->value() * 1000);
+    int mv = qRound(m_ppsVoltageSpin->value() * 1000.0);
     if (mv > 0)
         emit sendSetDecoyPps(mv);
 }
@@ -582,6 +598,18 @@ void ProtocolAnalysisPage::onDecoyModeClicked()
                       : QStringLiteral("listen");
     updateDecoyModeButton();
     emit sendSetDecoyMode(m_decoyMode);
+
+    // Clear PDO/PPS when switching to listen
+    if (m_decoyMode == QStringLiteral("listen")) {
+        m_protoTable->setRowCount(0);
+        m_pdoIndices.clear();
+        m_lastSourcePdos.clear();
+        m_ppsVoltageSpin->setEnabled(false);
+        m_ppsBtn->setEnabled(false);
+        if (m_voltageLabel) m_voltageLabel->setText(QStringLiteral("电压 -- V"));
+        if (m_currentLabel) m_currentLabel->setText(QStringLiteral("电流 -- A"));
+        if (m_powerLabel)   m_powerLabel->setText(QStringLiteral("功率 -- W"));
+    }
 }
 
 void ProtocolAnalysisPage::updateDecoyModeButton()
