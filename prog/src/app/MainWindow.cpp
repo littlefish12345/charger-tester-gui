@@ -24,6 +24,7 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(QStringLiteral("充电头测试仪"));
     setMinimumSize(1200, 800);
     setWindowButtonFlag(ElaAppBarType::ThemeChangeButtonHint, false);
+    setUserInfoCardVisible(false);
 
     m_portManager = new SerialPortManager(this);
 

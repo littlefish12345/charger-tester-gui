@@ -10,6 +10,7 @@
 #include <QSplitter>
 #include <QHeaderView>
 #include <QLineEdit>
+#include <QTimer>
 #include <QTime>
 #include <QPushButton>
 #include <QStringList>
@@ -396,6 +397,10 @@ ProtocolAnalysisPage::ProtocolAnalysisPage(QWidget *parent)
 {
     setupUi();
     updateTheme();
+
+    m_placeholderTimer = new QTimer(this);
+    m_placeholderTimer->setInterval(500);
+    connect(m_placeholderTimer, &QTimer::timeout, this, &ProtocolAnalysisPage::addNextPlaceholderProto);
 }
 
 void ProtocolAnalysisPage::setupUi()
@@ -475,7 +480,50 @@ void ProtocolAnalysisPage::setupUi()
     modeRow->addWidget(m_voltageLabel);
     modeRow->addWidget(m_currentLabel);
     modeRow->addWidget(m_powerLabel);
+    // Protocol indicator lights (centered between V/I/P and right edge)
+    struct ProtoInit { QString name; QColor color; };
+    const QVector<ProtoInit> protoInitList = {
+        {QStringLiteral("PD 3.0"),  QColor("#4FC3F7")},
+        {QStringLiteral("PPS"),     QColor("#CE93D8")},
+        {QStringLiteral("QC 2.0"),  QColor("#FFB74D")},
+        {QStringLiteral("QC 3.0"),  QColor("#FFB74D")},
+        {QStringLiteral("QC 4.0"),  QColor("#FF8A65")},
+        {QStringLiteral("QC 5"),    QColor("#E57373")},
+        {QStringLiteral("VOOC"),    QColor("#4DD0E1")},
+        {QStringLiteral("SVOOC"),   QColor("#4DB6AC")},
+        {QStringLiteral("BC 1.2"),  QColor("#AED581")},
+    };
+    auto *protoGrid = new QVBoxLayout();
+    protoGrid->setSpacing(2);
+    QHBoxLayout *gridRow = nullptr;
+    for (int i = 0; i < protoInitList.size(); ++i) {
+        if (i % 3 == 0) {
+            gridRow = new QHBoxLayout();
+            gridRow->setSpacing(2);
+            protoGrid->addLayout(gridRow);
+        }
+        const auto &p = protoInitList[i];
+        auto *ind = new QLabel(p.name, protoContainer);
+        ind->setAlignment(Qt::AlignCenter);
+        ind->setMinimumWidth(64);
+        ind->setFixedHeight(20);
+        ind->setStyleSheet(QStringLiteral(
+            "QLabel { background-color: #3A3A3A; color: #666666; "
+            "border-radius: 3px; padding: 2px 6px; font-size: 11px; "
+            "border: 1px solid #444444; }"));
+        gridRow->addWidget(ind);
+        gridRow->setAlignment(ind, Qt::AlignCenter);
+
+        ProtoIndicator pi;
+        pi.label = ind;
+        pi.activeColor = p.color;
+        pi.active = false;
+        m_protoIndicators.append(pi);
+    }
     modeRow->addStretch();
+    modeRow->addLayout(protoGrid);
+    modeRow->addStretch();
+    modeRow->setAlignment(protoGrid, Qt::AlignCenter);
 
     // PPS voltage selector row
     auto *ppsRow = new QHBoxLayout();
@@ -510,8 +558,8 @@ void ProtocolAnalysisPage::setupUi()
 
     splitter->addWidget(pdContainer);
     splitter->addWidget(protoContainer);
-    splitter->setStretchFactor(0, 2);
-    splitter->setStretchFactor(1, 1);
+    splitter->setStretchFactor(0, 3);
+    splitter->setStretchFactor(1, 2);
 
     layout->addWidget(splitter);
 
@@ -601,6 +649,7 @@ void ProtocolAnalysisPage::onProtocolInfoReceived(ChargerProtocol::MonitoringDat
     if (!m_protoTable)
         return;
 
+    cancelStaggeredPlaceholders();
     m_protoTable->setRowCount(0);
     m_pdoIndices.clear();
 
@@ -633,10 +682,15 @@ void ProtocolAnalysisPage::onProtocolInfoReceived(ChargerProtocol::MonitoringDat
         m_ppsVoltageSpin->setValue(data.pps.maxVoltageMv / 1000.0);
         m_ppsVoltageSpin->setEnabled(true);
         m_ppsBtn->setEnabled(true);
+        setProtoIndicator(QStringLiteral("PPS"), true);
     } else {
         m_ppsVoltageSpin->setEnabled(false);
         m_ppsBtn->setEnabled(false);
+        setProtoIndicator(QStringLiteral("PPS"), false);
     }
+
+    setProtoIndicator(QStringLiteral("PD 3.0"), !data.pdoList.isEmpty());
+    startStaggeredPlaceholders();
 
     if (data.pdoList.isEmpty() && !data.pps.valid) {
         int row = m_protoTable->rowCount();
@@ -670,8 +724,10 @@ void ProtocolAnalysisPage::onDecoyModeClicked()
     updateDecoyModeButton();
     emit sendSetDecoyMode(m_decoyMode);
 
-    // Clear PDO/PPS when switching to listen
+    // Clear PDO/PPS & indicators when switching to listen
     if (m_decoyMode == QStringLiteral("listen")) {
+        cancelStaggeredPlaceholders();
+        updateProtoIndicators();
         m_protoTable->setRowCount(0);
         m_pdoIndices.clear();
         m_lastSourcePdos.clear();
@@ -699,10 +755,101 @@ void ProtocolAnalysisPage::clearPdPackets()
         m_pdTable->setRowCount(0);
 }
 
+void ProtocolAnalysisPage::startStaggeredPlaceholders()
+{
+    cancelStaggeredPlaceholders();
+    m_placeholderIndex = 0;
+    m_placeholderNames = {
+        QStringLiteral("QC 2.0"), QStringLiteral("QC 3.0"), QStringLiteral("QC 4.0"),
+        QStringLiteral("QC 5"),   QStringLiteral("VOOC"),   QStringLiteral("SVOOC"),
+        QStringLiteral("BC 1.2"),
+    };
+    m_placeholderProtos = {
+        {QStringLiteral("QC 2.0"),  QStringLiteral("5V/2A, 9V/2A, 12V/1.5A, 20V/0.9A")},
+        {QStringLiteral("QC 3.0"),  QStringLiteral("3.6V-12V (0.2V 步进)")},
+        {QStringLiteral("QC 4.0"),  QStringLiteral("3.3V-12V PPS 兼容")},
+        {QStringLiteral("QC 5"),    QStringLiteral("3.3V-20V")},
+        {QString(),                 QString()}, // VOOC: indicator only
+        {QString(),                 QString()}, // SVOOC: indicator only
+        {QStringLiteral("BC 1.2"),  QStringLiteral("5V/1.5A (DCP)")},
+    };
+    if (!m_placeholderNames.isEmpty())
+        m_placeholderTimer->start();
+}
+
+void ProtocolAnalysisPage::cancelStaggeredPlaceholders()
+{
+    m_placeholderTimer->stop();
+}
+
+void ProtocolAnalysisPage::addNextPlaceholderProto()
+{
+    if (m_placeholderIndex >= m_placeholderNames.size()) {
+        m_placeholderTimer->stop();
+        return;
+    }
+
+    const QString &name = m_placeholderNames[m_placeholderIndex];
+    const auto &proto = m_placeholderProtos[m_placeholderIndex];
+
+    // Add table row only if name is set (VOOC/SVOOC are silent delay only)
+    if (!proto.first.isEmpty()) {
+        int row = m_protoTable->rowCount();
+        m_protoTable->insertRow(row);
+        m_protoTable->setItem(row, 0, new QTableWidgetItem(proto.first));
+        m_protoTable->setItem(row, 1, new QTableWidgetItem(proto.second));
+        auto *btn = new QPushButton(QStringLiteral("诱骗"), m_protoTable);
+        m_protoTable->setCellWidget(row, 2, btn);
+        setProtoIndicator(name, true);
+    }
+
+    m_placeholderIndex++;
+}
+
+void ProtocolAnalysisPage::setProtoIndicator(const QString &name, bool active)
+{
+    for (auto &pi : m_protoIndicators) {
+        if (pi.label->text() == name) {
+            pi.active = active;
+            if (active) {
+                pi.label->setStyleSheet(QStringLiteral(
+                    "QLabel { background-color: %1; color: #FFFFFF; "
+                    "border-radius: 3px; padding: 2px 6px; font-size: 11px; "
+                    "border: 1px solid %2; font-weight: bold; }"
+                ).arg(pi.activeColor.name(), pi.activeColor.lighter(130).name()));
+            } else {
+                pi.label->setStyleSheet(QStringLiteral(
+                    "QLabel { background-color: #3A3A3A; color: #666666; "
+                    "border-radius: 3px; padding: 2px 6px; font-size: 11px; "
+                    "border: 1px solid #444444; }"));
+            }
+            return;
+        }
+    }
+}
+
+void ProtocolAnalysisPage::updateProtoIndicators()
+{
+    auto set = [&](const QString &name, bool active) {
+        setProtoIndicator(name, active);
+    };
+    // All off by default (QC/VOOC/BC have no detection source)
+    set(QStringLiteral("PD 3.0"), false);
+    set(QStringLiteral("PPS"),    false);
+    set(QStringLiteral("QC 2.0"), false);
+    set(QStringLiteral("QC 3.0"), false);
+    set(QStringLiteral("QC 4.0"), false);
+    set(QStringLiteral("QC 5"),   false);
+    set(QStringLiteral("VOOC"),   false);
+    set(QStringLiteral("SVOOC"),  false);
+    set(QStringLiteral("BC 1.2"), false);
+}
+
 void ProtocolAnalysisPage::clearLog()
 {
     if (m_pdTable)
         m_pdTable->setRowCount(0);
     if (m_protoTable)
         m_protoTable->setRowCount(0);
+    updateProtoIndicators();
 }

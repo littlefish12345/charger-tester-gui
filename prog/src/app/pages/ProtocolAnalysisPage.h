@@ -8,6 +8,7 @@ class ElaDoubleSpinBox;
 class ElaPushButton;
 class QLabel;
 class QTableWidget;
+class QTimer;
 
 class ProtocolAnalysisPage : public QWidget
 {
@@ -55,6 +56,25 @@ private:
 
     // Cache last Source_Capabilities PDOs for RDO type detection
     QVector<quint32> m_lastSourcePdos;
+
+    // Protocol indicator labels
+    struct ProtoIndicator {
+        QLabel *label = nullptr;
+        QColor activeColor;
+        bool   active = false;
+    };
+    QVector<ProtoIndicator> m_protoIndicators;
+
+    void setProtoIndicator(const QString &name, bool active);
+    void updateProtoIndicators();
+    void addNextPlaceholderProto();
+    void startStaggeredPlaceholders();
+    void cancelStaggeredPlaceholders();
+
+    QTimer *m_placeholderTimer = nullptr;
+    int m_placeholderIndex = 0;
+    QStringList m_placeholderNames;
+    QVector<QPair<QString, QString>> m_placeholderProtos;
 };
 
 #endif // PROTOCOL_ANALYSIS_PAGE_H
