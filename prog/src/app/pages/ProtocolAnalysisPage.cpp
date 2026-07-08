@@ -221,6 +221,39 @@ QString decodeRdo(quint32 object, const QVector<quint32> &sourcePdos)
     return QStringLiteral("PDO%1 %2A").arg(pdoIndex).arg(opMa / 1000.0, 0, 'f', 2);
 }
 
+QString decodeAlert(quint32 object)
+{
+    // Table 6-40: Alert Data Object
+    // Bits 31-24 = Type of Alert bit field (bit 24=Reserved, 25=Battery, 26=OCP, 27=OTP,
+    //   28=OpChange, 29=SrcInput, 30=OVP, 31=Reserved)
+    QStringList alerts;
+    if (object & (1u << 25)) alerts << QStringLiteral("电池状态变化");
+    if (object & (1u << 26)) alerts << QStringLiteral("过流(OCP)");
+    if (object & (1u << 27)) alerts << QStringLiteral("过温(OTP)");
+    if (object & (1u << 28)) alerts << QStringLiteral("工作状态变化");
+    if (object & (1u << 29)) alerts << QStringLiteral("Source输入变化");
+    if (object & (1u << 30)) alerts << QStringLiteral("过压(OVP)");
+    // Bits 23-20: Fixed Batteries, Bits 19-16: Hot Swappable Batteries
+    const int fixedBatt = (object >> 20) & 0xf;
+    const int hotSwapBatt = (object >> 16) & 0xf;
+    if (fixedBatt) alerts << QStringLiteral("电池%1").arg(fixedBatt);
+    if (hotSwapBatt) alerts << QStringLiteral("热插拔电池%1").arg(hotSwapBatt);
+    return alerts.isEmpty() ? QStringLiteral("无告警") : alerts.join(QStringLiteral(", "));
+}
+
+QString decodeBist(quint32 object)
+{
+    const int mode = static_cast<int>((object >> 28) & 0xf);
+    switch (mode) {
+    case 1: return QStringLiteral("测试数据");
+    case 2: return QStringLiteral("载波模式2");
+    case 3: return QStringLiteral("载波模式3");
+    case 4: return QStringLiteral("载波模式0");
+    case 5: return QStringLiteral("载波模式1");
+    default: return QStringLiteral("BIST 模式%1").arg(mode);
+    }
+}
+
 QString decodeDataObject(int number, int messageType, quint32 object, const QVector<quint32> &sourcePdos)
 {
     Q_UNUSED(number);
@@ -230,7 +263,45 @@ QString decodeDataObject(int number, int messageType, quint32 object, const QVec
     if (messageType == 2)
         return decodeRdo(object, sourcePdos);
 
-    // Unknown: return raw hex
+    if (messageType == 3)
+        return decodeBist(object);
+
+    if (messageType == 5) {
+        // Table 6-39: Battery Status Data Object
+        // B31-16: Capacity in 0.1WH, B15-8: Info (bit0=Invalid, bit1=Present, bits3-2=Status)
+        const int capacity = (object >> 16) & 0xffff;
+        const int info = (object >> 8) & 0xff;
+        const bool invalid = info & 1;
+        const bool present = info & 2;
+        const int chargeStatus = (info >> 2) & 3;
+        QStringList parts;
+        parts << QStringLiteral("%1Wh").arg(capacity / 10.0, 0, 'f', 1);
+        if (invalid) parts << QStringLiteral("无效");
+        if (present) {
+            switch (chargeStatus) {
+            case 0: parts << QStringLiteral("充电中"); break;
+            case 1: parts << QStringLiteral("放电中"); break;
+            case 2: parts << QStringLiteral("空闲"); break;
+            }
+        }
+        return parts.join(QStringLiteral(", "));
+    }
+
+    if (messageType == 6)
+        return decodeAlert(object);
+
+    if (messageType == 9)
+        return QStringLiteral("EPR请求 %1").arg(hexWord32(object));
+    if (messageType == 10)
+        return QStringLiteral("EPR模式 %1").arg(hexWord32(object));
+    if (messageType == 11)
+        return QStringLiteral("Source信息 %1").arg(hexWord32(object));
+    if (messageType == 12)
+        return QStringLiteral("PD Rev %1.%2 V%3")
+            .arg((object >> 26) & 0xf)
+            .arg((object >> 24) & 0x3)
+            .arg((object >> 16) & 0xff);
+
     return hexWord32(object);
 }
 
