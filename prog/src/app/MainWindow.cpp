@@ -13,7 +13,7 @@
 #include <QWindow>
 
 namespace {
-constexpr int kAutoConnectIntervalMs = 3000;
+constexpr int kAutoConnectIntervalMs = 1000;
 constexpr int kAutoConnectBaudRate = 115200;
 constexpr const char *kAutoConnectSerial = "ElectricLoader";
 }

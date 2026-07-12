@@ -3,10 +3,10 @@
 #include <QJsonDocument>
 #include <QJsonParseError>
 
-// Match <chipId,command> prefix. Uplink chipId is accepted as-is and is not
-// compared against the configured downlink chipId.
-static const QRegularExpression HEADER_RE(
-    QStringLiteral(R"(^<([^,>]+),(\d{3})>)")
+// Match <chipId,command>{json} on a single line
+// chipId: any chars except ',' and '>', command: 3 digits
+static const QRegularExpression FRAME_RE(
+    QStringLiteral(R"(^<([^,>]+),(\d{3})>(\{.*\})\s*$)")
 );
 
 QVector<ChargerProtocol::ParsedFrame> ProtocolParser::parse(QByteArray &buffer)
@@ -18,95 +18,47 @@ QVector<ChargerProtocol::ParsedFrame> ProtocolParser::parse(QByteArray &buffer)
 
     QString text = QString::fromUtf8(buffer);
 
-    int pos = 0;
-    while (pos < text.size()) {
-        int start = text.indexOf('<', pos);
-        if (start < 0)
-            break;
+    // Find the last newline (handles \n and \r\n mixed)
+    int lastEnd = text.lastIndexOf('\n');
+    if (lastEnd < 0)
+        return frames;
 
-        QString remainder = text.mid(start);
-        int consumed = 0;
-        ChargerProtocol::ParsedFrame frame = extractFrame(remainder, consumed);
-
-        if (frame.valid) {
-            frames.append(frame);
-            pos = start + consumed;
-        } else {
-            int nextLt = text.indexOf('<', start + 1);
-            if (nextLt < 0) {
-                pos = start;
-                break;
-            }
-            pos = start + 1;
-        }
+    // Keep incomplete last line in buffer (skip \n and optional preceding \r)
+    int skip = 1;
+    if (lastEnd > 0 && text[lastEnd - 1] == '\r') {
+        lastEnd--;
+        skip = 2;
     }
+    QString complete = text.left(lastEnd);
+    buffer = text.mid(lastEnd + skip).toUtf8();
 
-    if (pos > 0)
-        buffer.remove(0, text.left(pos).toUtf8().size());
+    // Split on \n, strip \r
+    const QStringList lines = complete.split('\n', Qt::SkipEmptyParts);
+    for (const QString &line : lines) {
+        QString clean = line.trimmed();
+        if (clean.endsWith('\r'))
+            clean.chop(1);
+        QRegularExpressionMatch match = FRAME_RE.match(clean);
+        if (!match.hasMatch())
+            continue;
+
+        ChargerProtocol::ParsedFrame frame;
+        frame.chipId  = match.captured(1);
+        frame.command = match.captured(2).toInt();
+        frame.rawData = match.captured(0);
+
+        QJsonParseError jsonError;
+        QJsonDocument doc = QJsonDocument::fromJson(match.captured(3).toUtf8(), &jsonError);
+        if (jsonError.error != QJsonParseError::NoError)
+            continue;
+
+        if (!doc.isObject())
+            continue;
+
+        frame.json  = doc.object();
+        frame.valid = true;
+        frames.append(frame);
+    }
 
     return frames;
-}
-
-ChargerProtocol::ParsedFrame ProtocolParser::extractFrame(const QString &text, int &consumed)
-{
-    ChargerProtocol::ParsedFrame frame;
-    consumed = 0;
-
-    QRegularExpressionMatch match = HEADER_RE.match(text);
-    if (!match.hasMatch())
-        return frame;
-
-    frame.chipId  = match.captured(1).toUpper();
-    frame.command = match.captured(2).toInt();
-
-    int jsonStart = match.capturedEnd();
-    if (jsonStart >= text.size() || text[jsonStart] != '{')
-        return frame;
-
-    // Count braces to find the complete JSON (handles nested objects/arrays)
-    int depth = 0;
-    bool inString = false;
-    int jsonEnd = -1;
-    for (int i = jsonStart; i < text.size(); ++i) {
-        QChar ch = text[i];
-        if (inString) {
-            if (ch == '\\') {
-                ++i; // skip escaped char
-            } else if (ch == '"') {
-                inString = false;
-            }
-        } else {
-            if (ch == '"') {
-                inString = true;
-            } else if (ch == '{' || ch == '[') {
-                ++depth;
-            } else if (ch == '}' || ch == ']') {
-                --depth;
-                if (depth == 0) {
-                    jsonEnd = i + 1;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (jsonEnd < 0)
-        return frame; // incomplete JSON, wait for more data
-
-    QString jsonStr = text.mid(jsonStart, jsonEnd - jsonStart);
-    frame.rawData = text.left(jsonEnd);
-
-    QJsonParseError jsonError;
-    QJsonDocument doc = QJsonDocument::fromJson(jsonStr.toUtf8(), &jsonError);
-    if (jsonError.error != QJsonParseError::NoError)
-        return frame;
-
-    if (!doc.isObject())
-        return frame;
-
-    frame.json  = doc.object();
-    frame.valid = true;
-    consumed    = jsonEnd;
-
-    return frame;
 }

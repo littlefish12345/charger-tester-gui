@@ -31,6 +31,7 @@ void LoadControlPage::setupUi()
     m_currentSpin = new ElaDoubleSpinBox(m_currentGroup);
     m_currentSpin->setRange(0, 10.0);
     m_currentSpin->setDecimals(3);
+    m_currentSpin->setValue(1.0);
     m_currentSpin->setSuffix(" A");
     m_currentSpin->setSingleStep(0.1);
     m_currentSpin->setMinimumWidth(160);
@@ -93,7 +94,7 @@ void LoadControlPage::updateTheme()
 
 void LoadControlPage::onSendClicked()
 {
-    int currentMa = static_cast<int>(m_currentSpin->value() * 1000);
+    int currentMa = qRound(m_currentSpin->value() * 1000.0);
     emit sendSetMode(QStringLiteral("11")); // XT constant current
     emit sendSetPower(currentMa, 0);
     m_statusLabel->setText(QStringLiteral("已发送: 恒流 %1mA").arg(currentMa));

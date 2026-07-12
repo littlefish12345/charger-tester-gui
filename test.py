@@ -17,7 +17,7 @@ CHIP_ID = "ABCDABCD"
 
 def build_frame(command: int, payload: dict) -> bytes:
     json_str = json.dumps(payload, separators=(",", ":"))
-    frame = f"<{CHIP_ID},{command:03d}>{json_str}"
+    frame = f"<{CHIP_ID},{command:03d}>{json_str}\r\n"
     return frame.encode("utf-8")
 
 

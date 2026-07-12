@@ -245,7 +245,11 @@ void SerialPortManager::routeFrame(const ChargerProtocol::ParsedFrame &frame)
         break;
     }
     case Command::REPORT_STATUS: {
-        // 203: INA228 running V/I status
+        // 203: only process INA228, ignore INA226
+        const QString info = frame.json.value("info").toString();
+        if (info != QStringLiteral("INA228"))
+            break;
+
         MonitoringData data;
         data.voltageMv = jsonDouble(frame.json.value("V"));
         data.currentMa = jsonDouble(frame.json.value("I"));

@@ -10,6 +10,7 @@
 #include <QSplitter>
 #include <QHeaderView>
 #include <QLineEdit>
+#include <QRandomGenerator>
 #include <QTimer>
 #include <QTime>
 #include <QPushButton>
@@ -201,9 +202,8 @@ QString decodeRdo(quint32 object, const QVector<quint32> &sourcePdos)
     if (isPpsPdo(sourcePdos, pdoIndex)) {
         const int ppsMv = static_cast<int>(((object >> 9) & 0x7ff) * 20);
         const int ppsMa = static_cast<int>((object & 0x7f) * 50);
-        return QStringLiteral("PDO%1 PPS %2V/%3A  [%4]")
-            .arg(pdoIndex).arg(ppsMv / 1000.0, 0, 'f', 2).arg(ppsMa / 1000.0, 0, 'f', 2)
-            .arg(hexWord32(object));
+        return QStringLiteral("PDO%1 PPS %2V/%3A")
+            .arg(pdoIndex).arg(ppsMv / 1000.0, 0, 'f', 2).arg(ppsMa / 1000.0, 0, 'f', 2);
     }
 
     // Fixed/Variable: look up PDO to show its voltage
@@ -773,8 +773,10 @@ void ProtocolAnalysisPage::startStaggeredPlaceholders()
         {QString(),                 QString()}, // SVOOC: indicator only
         {QStringLiteral("BC 1.2"),  QStringLiteral("5V/1.5A (DCP)")},
     };
-    if (!m_placeholderNames.isEmpty())
+    if (!m_placeholderNames.isEmpty()) {
+        m_placeholderTimer->setInterval(500 + QRandomGenerator::global()->bounded(-150, 151));
         m_placeholderTimer->start();
+    }
 }
 
 void ProtocolAnalysisPage::cancelStaggeredPlaceholders()
@@ -788,6 +790,12 @@ void ProtocolAnalysisPage::addNextPlaceholderProto()
         m_placeholderTimer->stop();
         return;
     }
+
+    // Random jitter for next step
+    if (m_placeholderIndex + 1 < m_placeholderNames.size())
+        m_placeholderTimer->setInterval(500 + QRandomGenerator::global()->bounded(-150, 151));
+    else
+        m_placeholderTimer->stop();
 
     const QString &name = m_placeholderNames[m_placeholderIndex];
     const auto &proto = m_placeholderProtos[m_placeholderIndex];

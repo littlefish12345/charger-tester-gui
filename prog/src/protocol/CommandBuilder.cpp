@@ -53,7 +53,7 @@ QByteArray CommandBuilder::buildFrame(int command, const QJsonObject &json)
 {
     QJsonDocument doc(json);
     QString payload = QString::fromUtf8(doc.toJson(QJsonDocument::Compact));
-    QString frame = QStringLiteral("<%1,%2>%3")
+    QString frame = QStringLiteral("<%1,%2>%3\r\n")
                         .arg(m_chipId)
                         .arg(command, 3, 10, QChar('0'))
                         .arg(payload);
